@@ -103,44 +103,46 @@ if page == "📊 Record":
             st.session_state.df = real_data.reset_index(drop=True)
             st.rerun()
 
-# --- [PAGE: Analysis / Graph / Setting - 동일 유지] ---
 elif page == "📈 Analysis":
     st.title("📈 Rating Analysis")
-    df = st.session_state.df
-    if not df.empty:
-        calc_df = df[df['결과'].isin(['승', '패'])]
-        total = len(calc_df)
-        wins = len(calc_df[calc_df['결과'] == '승'])
+    df_ana = load_records()
+    if not df_ana.empty:
+        st.markdown('<div class="analysis-wrapper">', unsafe_allow_html=True)
+        st.markdown(render_styled_table("Overall Data", df_ana), unsafe_allow_html=True)
+        
+        st.subheader("덱별 승률")
+        sel_my = st.selectbox("내 덱 선택", st.session_state.metadata["my_decks"], label_visibility="collapsed")
+        st.markdown(render_styled_table(sel_my, df_ana[df_ana['내 덱'] == sel_my]), unsafe_allow_html=True)
+        
+        st.subheader("상대 덱별 승률")
         c1, c2 = st.columns(2)
-        c1.metric("Total Games", f"{total} G")
-        c2.metric("Win Rate", f"{(wins/total*100):.1f}%" if total > 0 else "0%")
-        st.dataframe(calc_df[['날짜', '내 덱', '상대 덱', '결과']], use_container_width=True, hide_index=True)
+        with c1: m_my = st.selectbox("Use.Deck", st.session_state.metadata["my_decks"], label_visibility="collapsed", key="m_my")
+        with c2: m_opp = st.selectbox("Opp.Deck", st.session_state.metadata["opp_decks"], label_visibility="collapsed", key="m_opp")
+        st.markdown(render_styled_table("결과", df_ana[(df_ana['내 덱']==m_my) & (df_ana['상대 덱']==m_opp)]), unsafe_allow_html=True)
+        st.markdown('</div>', unsafe_allow_html=True)
 
-elif page == "🖼️ Graph":
-    st.title("🖼️ Deck Distribution")
-    df = st.session_state.df
-    if not df.empty:
-        counts = df['상대 덱'].value_counts().reset_index()
-        counts.columns = ['Deck', 'Count']
-        fig = px.pie(counts, values='Count', names='Deck', title="Opponent Deck Usage", hole=0.3)
-        st.plotly_chart(fig, use_container_width=True)
-
-elif page == "⚙️ Setting":
-    st.title("⚙️ Metadata Setting (Auto-save)")
-    m = st.session_state.metadata
-    def sync_settings():
+else:
+    st.title("⚙️ Setting")
+    meta = st.session_state.metadata
+    c1, c2 = st.columns(2)
+    with c1: new_my = st.text_area("내 덱 (쉼표 구분)", ", ".join(meta.get("my_decks", [])))
+    with c2: new_opp = st.text_area("상대 덱 (쉼표 구분)", ", ".join(meta.get("opp_decks", [])))
+    c3, c4 = st.columns(2)
+    with c3: new_reasons = st.text_area("승패 요인 (쉼표 구분)", ", ".join(meta.get("win_loss_reasons", [])))
+    with c4: new_arche = st.text_area("아키타입 (쉼표 구분)", ", ".join(meta.get("archetypes", [])))
+    c5, _ = st.columns(2)
+    with c5: new_cards = st.text_area("특정 카드 (쉼표 구분)", ", ".join(meta.get("target_cards", [])))
+    
+    if st.button("✅ 설정 저장"):
         st.session_state.metadata = {
-            "my_decks": [x.strip() for x in st.session_state.new_my.split("\n") if x.strip()],
-            "opp_decks": [x.strip() for x in st.session_state.new_opp.split("\n") if x.strip()],
-            "win_loss_reasons": [x.strip() for x in st.session_state.new_reas.split("\n") if x.strip()],
-            "target_cards": [x.strip() for x in st.session_state.new_cards.split("\n") if x.strip()],
-            "archetypes": m["archetypes"]
+            "my_decks": [x.strip() for x in new_my.split(",") if x.strip()],
+            "opp_decks": [x.strip() for x in new_opp.split(",") if x.strip()],
+            "win_loss_reasons": [x.strip() for x in new_reasons.split(",") if x.strip()],
+            "archetypes": [x.strip() for x in new_arche.split(",") if x.strip()],
+            "target_cards": [x.strip() for x in new_cards.split(",") if x.strip()]
         }
-        save_metadata()
-    col1, col2 = st.columns(2)
-    with col1:
-        st.text_area("내 덱 리스트", "\n".join(m["my_decks"]), key="new_my", on_change=sync_settings, height=200)
-        st.text_area("상대 덱 리스트", "\n".join(m["opp_decks"]), key="new_opp", on_change=sync_settings, height=200)
-    with col2:
-        st.text_area("승패 요인", "\n".join(m["win_loss_reasons"]), key="new_reas", on_change=sync_settings, height=200)
-        st.text_area("특정 카드(타겟)", "\n".join(m["target_cards"]), key="new_cards", on_change=sync_settings, height=200)
+        with open(META_FILE, 'w', encoding='utf-8') as f:
+            json.dump(st.session_state.metadata, f, ensure_ascii=False, indent=4)
+        st.success("설정 저장 완료!")
+        st.rerun()
+
