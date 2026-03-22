@@ -30,7 +30,7 @@ def load_records():
     cols = ["NO.", "날짜", "선후공", "결과", "세트", "내 덱", "상대 덱", "아키타입", "승패 요인", "특정 카드", "브릭", "실수", "비고"]
     if os.path.exists(RECORD_FILE):
         df = pd.read_csv(RECORD_FILE, dtype=str).fillna("")
-        df = df[df['NO.'] != "경기"]
+        df = df[df['NO.'] != "경기"] # 요약행 제외 로드
         return df.reset_index(drop=True)
     return pd.DataFrame(columns=cols)
 
@@ -41,14 +41,22 @@ def render_summary_table(title, df):
     w_rate = (wins / total * 100) if total > 0 else 0
     return f'<div style="border:1px solid #ddd; padding:10px; border-radius:5px; background-color:#f8f9fa; margin-bottom:10px;"><h4 style="margin-top:0;">{title}</h4><p>Total: {total} | Win: {wins} | Rate: <b>{w_rate:.1f}%</b></p></div>'
 
-# --- 3. CSS 디자인 ---
+# --- 3. CSS 디자인 (상단 요약줄 고정 스타일) ---
 st.markdown("""
     <style>
     [data-testid="stDataFrameResizable"] div[role="grid"] div[role="row"] div { text-align: center !important; font-size: 13px !important; }
     thead { display: none !important; }
-    [data-testid="stDataFrameResizable"] div[role="grid"] div[role="row"]:nth-child(1) { background-color: #d9ead3 !important; font-weight: bold !important; }
+    
+    /* 1행: 초록색 요약줄 */
+    [data-testid="stDataFrameResizable"] div[role="grid"] div[role="row"]:nth-child(1) {
+        background-color: #d9ead3 !important; font-weight: bold !important; color: #000 !important;
+    }
+    
+    /* 승률/선공률 빨간색 강조 */
     [data-testid="stDataFrameResizable"] div[role="grid"] div[role="row"]:nth-child(1) div:nth-child(3),
-    [data-testid="stDataFrameResizable"] div[role="grid"] div[role="row"]:nth-child(1) div:nth-child(4) { color: #ff0000 !important; }
+    [data-testid="stDataFrameResizable"] div[role="grid"] div[role="row"]:nth-child(1) div:nth-child(4) {
+        color: #ff0000 !important;
+    }
     </style>
 """, unsafe_allow_html=True)
 
@@ -58,7 +66,7 @@ if 'df' not in st.session_state: st.session_state.df = load_records()
 
 # --- 5. 사이드바 및 공통 설정 ---
 page = st.sidebar.radio("Menu", ["📊 Record", "📈 Analysis", "🖼️ Graph", "⚙️ Setting"])
-table_height = st.sidebar.slider("표 높이 조절 (px)", 300, 1200, 700, 50)
+table_height = st.sidebar.slider("표 높이 조절 (px)", 20000)
 
 # --- [PAGE: Record] ---
 if page == "📊 Record":
@@ -66,7 +74,7 @@ if page == "📊 Record":
     data_df = st.session_state.df
     meta = st.session_state.metadata
 
-    # 통계 계산
+    # 실시간 통계 계산
     calc_df = data_df[data_df['결과'].isin(['승', '패'])]
     total_v = len(calc_df)
     f_rate = f"{(len(calc_df[calc_df['선후공'] == '선']) / total_v * 100):.2f}%" if total_v > 0 else "0.00%"
@@ -74,32 +82,31 @@ if page == "📊 Record":
     b_sum = str(data_df['브릭'].astype(str).str.contains('▣').sum())
     m_sum = str(data_df['실수'].astype(str).str.contains('▣').sum())
 
-    # 1행 요약 데이터
+    # 1행 요약 데이터 (이 값들은 드롭다운 옵션에 포함하지 않음)
     row_summary = ["경기", "Date", f_rate, w_rate, "Set", "Use.Deck", "Opp.Deck", "Plus Arch.", "W/L Factor", "Certain Card", b_sum, m_sum, "Summary"]
     display_df = pd.concat([pd.DataFrame([row_summary], columns=data_df.columns), data_df]).reset_index(drop=True)
 
-    # 드롭다운 옵션 설정 (첫 줄 텍스트를 옵션에 포함시켜 에러 방지)
+    # 데이터 에디터 설정 (드롭다운 목록에서 헤더 텍스트 제거)
     edited_df = st.data_editor(
         display_df, use_container_width=True, num_rows="dynamic", hide_index=True, key="main_editor", height=table_height,
         column_config={
-            "선후공": st.column_config.SelectboxColumn(options=[f_rate, "선", "후"]),
-            "결과": st.column_config.SelectboxColumn(options=[w_rate, "승", "패"]),
-            "세트": st.column_config.SelectboxColumn(options=["Set", "OO", "OXO", "XOO", "XX", "XOX", "OXX"]),
-            "내 덱": st.column_config.SelectboxColumn(options=["Use.Deck"] + meta["my_decks"]),
-            "상대 덱": st.column_config.SelectboxColumn(options=["Opp.Deck"] + meta["opp_decks"]),
-            "아키타입": st.column_config.SelectboxColumn(options=["Plus Arch."] + meta["archetypes"]),
-            "승패 요인": st.column_config.SelectboxColumn(options=["W/L Factor"] + meta["win_loss_reasons"]),
-            "특정 카드": st.column_config.SelectboxColumn(options=["Certain Card"] + meta["target_cards"]),
+            "선후공": st.column_config.SelectboxColumn(options=["선", "후"]),
+            "결과": st.column_config.SelectboxColumn(options=["승", "패"]),
+            "세트": st.column_config.SelectboxColumn(options=["OO", "OXO", "XOO", "XX", "XOX", "OXX"]),
+            "내 덱": st.column_config.SelectboxColumn(options=meta["my_decks"]),
+            "상대 덱": st.column_config.SelectboxColumn(options=meta["opp_decks"]),
+            "아키타입": st.column_config.SelectboxColumn(options=meta["archetypes"]),
+            "승패 요인": st.column_config.SelectboxColumn(options=meta["win_loss_reasons"]),
+            "특정 카드": st.column_config.SelectboxColumn(options=meta["target_cards"]),
         }
     )
 
-    # 자동 저장 로직
+    # 자동 저장 (1행은 요약이므로 무시하고 2행부터 저장)
     if not edited_df.equals(display_df):
         real_data = edited_df.iloc[1:].copy()
         real_data.to_csv(RECORD_FILE, index=False, encoding='utf-8-sig')
         st.session_state.df = real_data.reset_index(drop=True)
         st.rerun()
-
 # --- [PAGE: Analysis] ---
 elif page == "📈 Analysis":
     st.title("📈 Rating Analysis")
