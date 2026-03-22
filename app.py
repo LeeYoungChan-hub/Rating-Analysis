@@ -109,7 +109,7 @@ elif page == "📈 Analysis":
         col_left, col_right = st.columns([1, 2.2])
         with col_left:
             st.markdown(render_summary_table("Overall Data", calc_df), unsafe_allow_html=True)
-            sel_my = st.selectbox("내 덱", meta["my_decks"])
+            sel_my = st.selectbox("내 덱 선택", st.session_state.metadata["my_decks"])
             st.markdown(render_summary_table(f"Result: {sel_my}", calc_df[calc_df['내 덱'] == sel_my]), unsafe_allow_html=True)
         with col_right:
             st.subheader("📊 Matchup Statistics")
