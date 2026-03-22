@@ -76,8 +76,7 @@ if page == "📊 Record":
     b_sum = str(data_df['브릭'].astype(str).str.contains('▣').sum())
     m_sum = str(data_df['실수'].astype(str).str.contains('▣').sum())
 
-    row1 = ["NO.", "날짜", "선후공", "결과", "세트", "내 덱", "상대 덱", "아키타입", "승패 요인", "특정 카드", "브릭", "실수", "비고"]
-    row2 = ["경기", "Date", f_rate, w_rate, "Set", "Use.Deck", "Opp.Deck", "Plus Arch.", "W/L Factor", "Certain Card", b_sum, m_sum, "Summary"]
+    row1 = ["경기", "Date", f_rate, w_rate, "Set", "Use.Deck", "Opp.Deck", "Plus Arch.", "W/L Factor", "Certain Card", b_sum, m_sum, "Summary"]
     display_df = pd.concat([pd.DataFrame([row1, row2], columns=data_df.columns), data_df]).reset_index(drop=True)
 
     edited_df = st.data_editor(
