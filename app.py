@@ -10,7 +10,7 @@ META_FILE = 'metadata_config.json'
 
 st.set_page_config(page_title="YGO Rating Analysis", layout="wide")
 
-# --- 2. CSS 디자인 (엑셀 스타일 상단 2줄 재현) ---
+# --- 2. CSS 디자인 (초록색 요약줄을 맨 위로) ---
 st.markdown("""
     <style>
     [data-testid="stDataFrameResizable"] div[role="grid"] div[role="row"] div { 
@@ -18,20 +18,17 @@ st.markdown("""
         font-size: 13px !important; 
     }
     thead { display: none !important; }
-    /* 1행: 노란색 제목줄 */
+    
+    /* 1행: 초록색 요약줄 (기존의 row2가 위로 올라옴) */
     [data-testid="stDataFrameResizable"] div[role="grid"] div[role="row"]:nth-child(1) {
-        background-color: #f9cb9c !important; 
+        background-color: #d9ead3 !important; 
         font-weight: bold !important;
         color: #000 !important;
     }
-    /* 2행: 초록색 요약줄 */
-    [data-testid="stDataFrameResizable"] div[role="grid"] div[role="row"]:nth-child(2) {
-        background-color: #d9ead3 !important; 
-        font-weight: bold !important;
-    }
-    /* 승률/선공률 빨간색 강조 */
-    [data-testid="stDataFrameResizable"] div[role="grid"] div[role="row"]:nth-child(2) div:nth-child(3),
-    [data-testid="stDataFrameResizable"] div[role="grid"] div[role="row"]:nth-child(2) div:nth-child(4) {
+    
+    /* 승률/선공률 빨간색 강조 (1행의 3, 4번째 칸) */
+    [data-testid="stDataFrameResizable"] div[role="grid"] div[role="row"]:nth-child(1) div:nth-child(3),
+    [data-testid="stDataFrameResizable"] div[role="grid"] div[role="row"]:nth-child(1) div:nth-child(4) {
         color: #ff0000 !important;
     }
     textarea, input { spellcheck: false !important; }
@@ -52,7 +49,8 @@ def load_records():
     cols = ["NO.", "날짜", "선후공", "결과", "세트", "내 덱", "상대 덱", "아키타입", "승패 요인", "특정 카드", "브릭", "실수", "비고"]
     if os.path.exists(RECORD_FILE):
         df = pd.read_csv(RECORD_FILE, dtype=str).fillna("")
-        df = df[~df['NO.'].isin(["NO.", "경기"])]
+        # 요약행 식별자("경기") 제외하고 로드
+        df = df[df['NO.'] != "경기"]
         return df.reset_index(drop=True)
     return pd.DataFrame(columns=cols)
 
@@ -69,6 +67,8 @@ table_height = st.sidebar.slider("표 높이 조절 (px)", 300, 1200, 700, 50)
 if page == "📊 Record":
     st.title("📊 Match Record")
     data_df = st.session_state.df
+    
+    # 통계 계산
     calc_df = data_df[data_df['결과'].isin(['승', '패'])]
     total_v = len(calc_df)
     f_rate = f"{(len(calc_df[calc_df['선후공'] == '선']) / total_v * 100):.2f}%" if total_v > 0 else "0.00%"
@@ -76,8 +76,11 @@ if page == "📊 Record":
     b_sum = str(data_df['브릭'].astype(str).str.contains('▣').sum())
     m_sum = str(data_df['실수'].astype(str).str.contains('▣').sum())
 
-    row1 = ["경기", "Date", f_rate, w_rate, "Set", "Use.Deck", "Opp.Deck", "Plus Arch.", "W/L Factor", "Certain Card", b_sum, m_sum, "Summary"]
-    display_df = pd.concat([pd.DataFrame([row1, row2], columns=data_df.columns), data_df]).reset_index(drop=True)
+    # 1행: 초록색 요약줄만 생성
+    row_summary = ["경기", "Date", f_rate, w_rate, "Set", "Use.Deck", "Opp.Deck", "Plus Arch.", "W/L Factor", "Certain Card", b_sum, m_sum, "Summary"]
+    
+    # 요약줄 + 실제 데이터 결합
+    display_df = pd.concat([pd.DataFrame([row_summary], columns=data_df.columns), data_df]).reset_index(drop=True)
 
     edited_df = st.data_editor(
         display_df, use_container_width=True, num_rows="dynamic", hide_index=True, key="main_editor", height=table_height,
@@ -92,14 +95,15 @@ if page == "📊 Record":
         }
     )
 
+    # 자동 저장 로직 (1행 제외하고 저장)
     if not edited_df.equals(display_df):
-        if len(edited_df) >= 2:
-            real_data = edited_df.iloc[2:].copy()
+        if len(edited_df) >= 1:
+            real_data = edited_df.iloc[1:].copy() # 1행(요약줄) 제외
             real_data.to_csv(RECORD_FILE, index=False, encoding='utf-8-sig')
             st.session_state.df = real_data.reset_index(drop=True)
             st.rerun()
 
-# --- [PAGE: Analysis] ---
+# --- [PAGE: Analysis / Graph / Setting - 동일 유지] ---
 elif page == "📈 Analysis":
     st.title("📈 Rating Analysis")
     df = st.session_state.df
@@ -112,7 +116,6 @@ elif page == "📈 Analysis":
         c2.metric("Win Rate", f"{(wins/total*100):.1f}%" if total > 0 else "0%")
         st.dataframe(calc_df[['날짜', '내 덱', '상대 덱', '결과']], use_container_width=True, hide_index=True)
 
-# --- [PAGE: Graph] ---
 elif page == "🖼️ Graph":
     st.title("🖼️ Deck Distribution")
     df = st.session_state.df
@@ -122,7 +125,6 @@ elif page == "🖼️ Graph":
         fig = px.pie(counts, values='Count', names='Deck', title="Opponent Deck Usage", hole=0.3)
         st.plotly_chart(fig, use_container_width=True)
 
-# --- [PAGE: Setting] ---
 elif page == "⚙️ Setting":
     st.title("⚙️ Metadata Setting (Auto-save)")
     m = st.session_state.metadata
