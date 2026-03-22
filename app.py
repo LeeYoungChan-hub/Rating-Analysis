@@ -4,48 +4,58 @@ import os
 import json
 import plotly.express as px
 
-# --- 1. 설정: 파일명 변경으로 깨끗하게 시작 ---
-RECORD_FILE = 'ygo_data_v2.csv'  # 새로운 파일명
+# --- 1. 설정 및 파일 경로 ---
+RECORD_FILE = 'ygo_master_data.csv'
 META_FILE = 'metadata_config.json'
 
 st.set_page_config(page_title="YGO Rating Analysis", layout="wide")
 
-# --- 2. 디자인: CSS (깔끔한 표 정렬) ---
+# --- 2. [디자인] CSS: 엑셀 스타일 및 레이아웃 ---
 st.markdown("""
     <style>
-    /* 표 안의 텍스트 중앙 정렬 */
+    /* 전체 텍스트 중앙 정렬 */
     [data-testid="stDataFrameResizable"] div[role="grid"] div[role="row"] div { 
         text-align: center !important; 
         font-size: 13px !important; 
     }
-    /* 표 헤더 색상 */
-    thead tr th {
-        background-color: #f0f2f6 !important;
+    
+    /* Record 페이지 전용: 헤더 숨기기 및 색상 지정 */
+    thead { display: none !important; }
+
+    /* 1행(노란색): 제목줄 */
+    [data-testid="stDataFrameResizable"] div[role="grid"] div[role="row"]:nth-child(1) {
+        background-color: #f9cb9c !important; 
+        font-weight: bold !important;
+        color: #000 !important;
+    }
+
+    /* 2행(초록색): 요약줄 */
+    [data-testid="stDataFrameResizable"] div[role="grid"] div[role="row"]:nth-child(2) {
+        background-color: #d9ead3 !important; 
         font-weight: bold !important;
     }
-    /* 입력창 맞춤법 검사(빨간줄) 제거 */
-    textarea, input { spellcheck: false !important; }
+
+    /* 승률/선공률 빨간색 강조 */
+    [data-testid="stDataFrameResizable"] div[role="grid"] div[role="row"]:nth-child(2) div:nth-child(3),
+    [data-testid="stDataFrameResizable"] div[role="grid"] div[role="row"]:nth-child(2) div:nth-child(4) {
+        color: #ff0000 !important;
+    }
     
-    /* 분석 페이지 테이블 스타일 */
-    .styled-table { width: 100%; font-size: 12px; border-collapse: collapse; margin-bottom: 20px; border: 1px solid #dee2e6; }
-    .styled-table th, .styled-table td { text-align: center !important; border: 1px solid #dee2e6 !important; padding: 6px !important; }
-    .styled-table th { background-color: #f9cb9c !important; color: #31333F !important; }
-    .win-val { color: #0000ff !important; font-weight: bold; }
-    .loss-val { color: #ff0000 !important; font-weight: bold; }
+    /* 입력창 빨간줄 제거 */
+    textarea, input { spellcheck: false !important; }
     </style>
 """, unsafe_allow_html=True)
 
-# --- 3. 핵심 함수: 데이터 관리 ---
+# --- 3. 데이터 관리 함수 ---
 def load_metadata():
     if os.path.exists(META_FILE):
-        with open(META_FILE, 'r', encoding='utf-8') as f:
-            return json.load(f)
+        with open(META_FILE, 'r', encoding='utf-8') as f: return json.load(f)
     return {
         "my_decks": ["KT", "Ennea"], 
-        "opp_decks": ["Mitsu", "Branded", "Tenpai", "Snake-Eye"],
-        "archetypes": ["운영", "전개", "함떡"], 
-        "win_loss_reasons": ["실력", "패사고", "매칭운", "상성"], 
-        "target_cards": ["Nibiru", "Ash", "Maxx-C"]
+        "opp_decks": ["Mitsu", "Tenpai", "Branded"], 
+        "archetypes": ["운영", "전개"], 
+        "win_loss_reasons": ["자신 실력", "특정 카드", "선후공", "상대 패"], 
+        "target_cards": ["Nibiru", "Ash", "Fuwalos"]
     }
 
 def save_metadata(meta):
@@ -53,141 +63,115 @@ def save_metadata(meta):
         json.dump(meta, f, ensure_ascii=False, indent=4)
 
 def load_records():
-    cols = ["NO.", "날짜", "선후공", "결과", "세트", "점수", "내 덱", "상대 덱", "아키타입", "승패 요인", "특정 카드", "브릭", "실수", "비고"]
+    cols = ["NO.", "날짜", "선후공", "결과", "세트", "내 덱", "상대 덱", "아키타입", "승패 요인", "특정 카드", "브릭", "실수", "비고"]
     if os.path.exists(RECORD_FILE):
         df = pd.read_csv(RECORD_FILE, dtype=str).fillna("")
-        # 체크박스 데이터 복원
-        for col in ["브릭", "실수"]:
-            if col in df.columns:
-                df[col] = df[col].apply(lambda x: str(x).lower() in ['true', '1'])
-        return df
+        df = df[~df['NO.'].isin(["NO.", "경기"])] # 요약행 제외하고 로드
+        return df.reset_index(drop=True)
     return pd.DataFrame(columns=cols)
 
 def save_records(df):
-    df.to_csv(RECORD_FILE, index=False, encoding='utf-8-sig')
-    st.session_state.df = df.reset_index(drop=True)
+    # 상단 2줄 제외하고 저장
+    if len(df) > 2:
+        real_data = df.iloc[2:].copy()
+        real_data.to_csv(RECORD_FILE, index=False, encoding='utf-8-sig')
+        st.session_state.df = real_data.reset_index(drop=True)
 
-def render_summary_table(title, target_df):
-    calc = target_df[target_df['결과'].isin(['승', '패'])]
-    total = len(calc)
-    if total == 0: return f"<div>{title}: 데이터 없음</div>"
-    
-    w, l = len(calc[calc['결과']=='승']), len(calc[calc['결과']=='패'])
-    f_df, s_df = calc[calc['선후공']=='선'], calc[calc['선후공']=='후']
-    f_t, s_t = len(f_df), len(s_df)
-    f_w, s_w = len(f_df[f_df['결과']=='승']), len(s_df[s_df['결과']=='승'])
-
-    return f"""
-        <table class="styled-table">
-            <tr><th colspan="5">{title}</th></tr>
-            <tr><th>Overall</th><th>Games</th><th>Win Rate</th><th>W</th><th>L</th></tr>
-            <tr><td>Result</td><td>{total}</td><td>{(w/total*100):.2f}%</td><td class="win-val">{w}</td><td class="loss-val">{l}</td></tr>
-            <tr><th>Coin</th><th>1st</th><th>2nd</th><th>1st Rate</th><th>2nd Rate</th></tr>
-            <tr><td>Result</td><td>{f_t}</td><td>{s_t}</td><td>{(f_t/total*100):.1f}%</td><td>{(s_t/total*100):.1f}%</td></tr>
-        </table>
-    """
-
-# --- 4. 세션 상태 초기화 ---
+# --- 4. 초기화 ---
 if 'metadata' not in st.session_state: st.session_state.metadata = load_metadata()
 if 'df' not in st.session_state: st.session_state.df = load_records()
 
 # --- 5. 사이드바 메뉴 ---
 page = st.sidebar.radio("Menu", ["📊 Record", "📈 Analysis", "🖼️ Graph", "⚙️ Setting"])
 
-# --- PAGE: Record ---
+# --- [PAGE: Record] ---
 if page == "📊 Record":
     st.title("📊 Match Record")
     
-    col1, col2 = st.columns([1, 5])
-    with col1:
-        if st.button("➕ Add New Match"):
-            new_no = str(len(st.session_state.df) + 1)
-            new_row = pd.DataFrame([{
-                "NO.": new_no, "날짜": "", "선후공": "", "결과": "", "세트": "", "점수": "", 
-                "내 덱": "", "상대 덱": "", "아키타입": "", "승패 요인": "", "특정 카드": "", 
-                "브릭": False, "실수": False, "비고": ""
-            }])
-            st.session_state.df = pd.concat([st.session_state.df, new_row], ignore_index=True)
-            save_records(st.session_state.df)
-            st.rerun()
+    data_df = st.session_state.df
+    total_valid = len(data_df[data_df['결과'].isin(['승', '패'])])
+    f_rate = f"{(len(data_df[data_df['선후공'] == '선']) / total_valid * 100):.2f}%" if total_valid > 0 else "0.00%"
+    w_rate = f"{(len(data_df[data_df['결과'] == '승']) / total_valid * 100):.2f}%" if total_valid > 0 else "0.00%"
+    b_sum = str(data_df['브릭'].astype(str).str.contains('▣').sum())
+    m_sum = str(data_df['실수'].astype(str).str.contains('▣').sum())
 
-    # 데이터 에디터 (가장 순수한 형태)
+    # 시각적 2줄 구성
+    row1 = ["NO.", "날짜", "선후공", "결과", "세트 전적", "내 덱", "상대 덱", "아키타입", "승패 요인", "특정 카드", "브릭", "실수", "비고"]
+    row2 = ["경기", "Date", f_rate, w_rate, "Result", "Use.deck", "Opp. deck", "Plus Arch.", "W/L Factor", "Certain Card", b_sum, m_sum, "Summary"]
+    display_df = pd.concat([pd.DataFrame([row1, row2], columns=data_df.columns), data_df]).reset_index(drop=True)
+
     edited = st.data_editor(
-        st.session_state.df, 
-        use_container_width=True, 
-        num_rows="dynamic", 
-        hide_index=True, 
-        key="main_editor",
-        height=700,
+        display_df, use_container_width=True, num_rows="dynamic", hide_index=True, key="main_editor", height=600,
         column_config={
-            "NO.": st.column_config.TextColumn("NO.", width=50),
-            "날짜": st.column_config.TextColumn("날짜", width=90),
-            "선후공": st.column_config.SelectboxColumn("선후공", options=["", "선", "후"], width=70),
-            "결과": st.column_config.SelectboxColumn("결과", options=["", "승", "패"], width=70),
-            "세트": st.column_config.SelectboxColumn("세트", options=["", "OO", "OXO", "XOO", "XX", "XOX", "OXX"], width=90),
-            "내 덱": st.column_config.SelectboxColumn("내 덱", options=[""] + st.session_state.metadata["my_decks"], width=120),
-            "상대 덱": st.column_config.SelectboxColumn("상대 덱", options=[""] + st.session_state.metadata["opp_decks"], width=130),
-            "아키타입": st.column_config.SelectboxColumn("아키타입", options=[""] + st.session_state.metadata["archetypes"], width=110),
-            "승패 요인": st.column_config.SelectboxColumn("승패 요인", options=[""] + st.session_state.metadata["win_loss_reasons"], width=110),
-            "브릭": st.column_config.CheckboxColumn("브릭", width=60), 
-            "실수": st.column_config.CheckboxColumn("실수", width=60),
-            "비고": st.column_config.TextColumn("비고", width=350)
+            "선후공": st.column_config.SelectboxColumn(options=["", "선", "후"]),
+            "결과": st.column_config.SelectboxColumn(options=["", "승", "패"]),
+            "세트": st.column_config.SelectboxColumn(options=["", "OO", "OXO", "XOO", "XX", "XOX", "OXX"]),
+            "내 덱": st.column_config.SelectboxColumn(options=[""] + st.session_state.metadata["my_decks"]),
+            "상대 덱": st.column_config.SelectboxColumn(options=[""] + st.session_state.metadata["opp_decks"]),
+            "브릭": st.column_config.TextColumn(help="▣ 입력 시 카운트"),
+            "실수": st.column_config.TextColumn(help="▣ 입력 시 카운트"),
         }
     )
 
-    if not edited.equals(st.session_state.df):
+    if st.button("💾 SAVE DATA"):
         save_records(edited)
         st.rerun()
 
-# --- PAGE: Analysis ---
+# --- [PAGE: Analysis] ---
 elif page == "📈 Analysis":
     st.title("📈 Rating Analysis")
-    df_ana = load_records()
-    if not df_ana.empty:
-        calc_df = df_ana[df_ana['결과'].isin(['승', '패'])].copy()
-        st.markdown(render_summary_table("Overall Statistics", calc_df), unsafe_allow_html=True)
+    df = st.session_state.df
+    if not df.empty:
+        calc_df = df[df['결과'].isin(['승', '패'])]
+        total = len(calc_df)
+        wins = len(calc_df[calc_df['결과'] == '승'])
+        
+        c1, c2, c3 = st.columns(3)
+        c1.metric("Total Games", f"{total} G")
+        c2.metric("Win Rate", f"{(wins/total*100):.1f}%" if total > 0 else "0%")
+        c3.metric("Bricks/Mistakes", f"{b_sum} / {m_sum}")
         
         st.subheader("Matchup Detail")
-        sel_my = st.selectbox("Select My Deck", st.session_state.metadata["my_decks"])
-        my_df = calc_df[calc_df['내 덱'] == sel_my]
-        st.markdown(render_summary_table(f"Results for {sel_my}", my_df), unsafe_allow_html=True)
+        st.dataframe(calc_df[['날짜', '내 덱', '상대 덱', '결과', '승패 요인']], use_container_width=True, hide_index=True)
     else:
-        st.info("No data available. Please add records first.")
+        st.info("데이터가 없습니다. Record 페이지에서 먼저 기록해주세요.")
 
-# --- PAGE: Graph ---
+# --- [PAGE: Graph] ---
 elif page == "🖼️ Graph":
     st.title("🖼️ Deck Distribution")
-    df_graph = load_records()
-    if not df_graph.empty:
-        calc_df = df_graph[df_graph['상대 덱'] != ""]
-        if not calc_df.empty:
-            counts = calc_df['상대 덱'].value_counts().reset_index()
-            counts.columns = ['Deck', 'Count']
-            fig = px.pie(counts, values='Count', names='Deck', hole=0.4, title="Opponent Deck Share")
-            st.plotly_chart(fig, use_container_width=True)
+    df = st.session_state.df
+    if not df.empty:
+        # 상대 덱 분포 그래프
+        counts = df['상대 덱'].value_counts().reset_index()
+        counts.columns = ['Deck', 'Count']
+        fig = px.pie(counts, values='Count', names='Deck', title="Opponent Deck Usage", hole=0.3)
+        st.plotly_chart(fig, use_container_width=True)
     else:
-        st.info("No data to display.")
+        st.info("그래프를 표시할 데이터가 부족합니다.")
 
-# --- PAGE: Setting ---
+# --- [PAGE: Setting] ---
 elif page == "⚙️ Setting":
     st.title("⚙️ Metadata Setting")
-    st.info("Enter items separated by new lines. Changes save automatically on focus out.")
+    st.write("각 항목을 줄바꿈(Enter)으로 구분하여 입력하세요.")
     
-    def update_meta():
+    m = st.session_state.metadata
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        new_my = st.text_area("내 덱 리스트", "\n".join(m["my_decks"]), height=150)
+        new_opp = st.text_area("상대 덱 리스트", "\n".join(m["opp_decks"]), height=150)
+    with col2:
+        new_reas = st.text_area("승패 요인", "\n".join(m["win_loss_reasons"]), height=150)
+        new_cards = st.text_area("특정 카드(타겟)", "\n".join(m["target_cards"]), height=150)
+
+    if st.button("✅ 설정 저장"):
         st.session_state.metadata = {
-            "my_decks": [x.strip() for x in st.session_state.s_my.split("\n") if x.strip()],
-            "opp_decks": [x.strip() for x in st.session_state.s_opp.split("\n") if x.strip()],
-            "win_loss_reasons": [x.strip() for x in st.session_state.s_reas.split("\n") if x.strip()],
-            "archetypes": [x.strip() for x in st.session_state.s_arch.split("\n") if x.strip()],
-            "target_cards": [x.strip() for x in st.session_state.s_card.split("\n") if x.strip()]
+            "my_decks": [x.strip() for x in new_my.split("\n") if x.strip()],
+            "opp_decks": [x.strip() for x in new_opp.split("\n") if x.strip()],
+            "win_loss_reasons": [x.strip() for x in new_reas.split("\n") if x.strip()],
+            "target_cards": [x.strip() for x in new_cards.split("\n") if x.strip()],
+            "archetypes": m["archetypes"]
         }
         save_metadata(st.session_state.metadata)
-
-    m = st.session_state.metadata
-    c1, c2 = st.columns(2)
-    with c1: st.text_area("My Decks", "\n".join(m["my_decks"]), key="s_my", on_change=update_meta, height=150)
-    with c2: st.text_area("Opponent Decks", "\n".join(m["opp_decks"]), key="s_opp", on_change=update_meta, height=150)
-    
-    c3, c4 = st.columns(2)
-    with c3: st.text_area("W/L Reasons", "\n".join(m["win_loss_reasons"]), key="s_reas", on_change=update_meta, height=150)
-    with c4: st.text_area("Archetypes", "\n".join(m["archetypes"]), key="s_arch", on_change=update_meta, height=150)
+        st.success("설정이 저장되었습니다!")
+        st.rerun()
