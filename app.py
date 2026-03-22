@@ -103,230 +103,91 @@ if page == "📊 Record":
             st.session_state.df = real_data.reset_index(drop=True)
             st.rerun()
 
-# --- PAGE: Analysis ---
+# --- [PAGE: Analysis] ---
 elif page == "📈 Analysis":
-
     st.title("📈 Rating Analysis")
     df_ana = load_records()
-
     if not df_ana.empty:
-
         calc_df = df_ana[df_ana['결과'].isin(['승', '패'])].copy()
-
+        
         # 분석용 수치 컬럼 생성
         calc_df['is_win'] = calc_df['결과'].apply(lambda x: 1 if x == '승' else 0)
         calc_df['is_loss'] = calc_df['결과'].apply(lambda x: 1 if x == '패' else 0)
         calc_df['is_1st'] = calc_df['선후공'].apply(lambda x: 1 if x == '선' else 0)
         calc_df['is_2nd'] = calc_df['선후공'].apply(lambda x: 1 if x == '후' else 0)
-
         calc_df['win_1st'] = ((calc_df['is_1st'] == 1) & (calc_df['is_win'] == 1)).astype(int)
         calc_df['win_2nd'] = ((calc_df['is_2nd'] == 1) & (calc_df['is_win'] == 1)).astype(int)
-
-        calc_df['has_arch'] = calc_df['아키타입'].apply(
-            lambda x: 1 if str(x).strip() != "" else 0
-        )
+        calc_df['has_arch'] = calc_df['아키타입'].apply(lambda x: 1 if str(x).strip() != "" else 0)
 
         col_left, col_right = st.columns([1, 2.2])
-
-        # ---------------- LEFT PANEL ----------------
+        
         with col_left:
-
-            st.markdown('<div class="analysis-left-wrapper">', unsafe_allow_html=True)
-
-            # Overall Data
-            st.markdown(
-                render_summary_table("Overall Data", calc_df),
-                unsafe_allow_html=True
-            )
-
+            st.markdown(render_summary_table("Overall Data", calc_df), unsafe_allow_html=True)
             st.write("---")
-
-            # 내 덱별 승률
             st.subheader("내 덱별 승률")
-
-            sel_my = st.selectbox(
-                "내 덱 선택",
-                st.session_state.metadata["my_decks"],
-                key="sel_my_ana"
-            )
-
+            sel_my = st.selectbox("내 덱 선택", st.session_state.metadata["my_decks"], key="sel_my_ana")
             my_deck_df = calc_df[calc_df['내 덱'] == sel_my]
-
-            st.markdown(
-                render_summary_table(f"Result: {sel_my}", my_deck_df),
-                unsafe_allow_html=True
-            )
-
+            st.markdown(render_summary_table(f"Result: {sel_my}", my_deck_df), unsafe_allow_html=True)
             st.write("---")
-
-            # 특정 매치업
             st.subheader("상대 덱별 상세")
-
             c1, c2 = st.columns(2)
+            with c1: m_my = st.selectbox("Use.Deck", st.session_state.metadata["my_decks"], key="m_my_box")
+            with c2: m_opp = st.selectbox("Opp.Deck", st.session_state.metadata["opp_decks"], key="m_opp_box")
+            st.markdown(render_summary_table(f"{m_my} vs {m_opp}", calc_df[(calc_df['내 덱']==m_my)&(calc_df['상대 덱']==m_opp)]), unsafe_allow_html=True)
 
-            with c1:
-                m_my = st.selectbox(
-                    "Use.Deck",
-                    st.session_state.metadata["my_decks"],
-                    key="m_my_box"
-                )
-
-            with c2:
-                m_opp = st.selectbox(
-                    "Opp.Deck",
-                    st.session_state.metadata["opp_decks"],
-                    key="m_opp_box"
-                )
-
-            matchup_df = calc_df[
-                (calc_df['내 덱'] == m_my) &
-                (calc_df['상대 덱'] == m_opp)
-            ]
-
-            st.markdown(
-                render_summary_table(f"{m_my} vs {m_opp}", matchup_df),
-                unsafe_allow_html=True
-            )
-
-            st.markdown('</div>', unsafe_allow_html=True)
-
-        # ---------------- RIGHT PANEL ----------------
         with col_right:
-
             st.subheader("📊 Opponent Deck Statistics")
-
             target_df = calc_df[calc_df['내 덱'] == sel_my].copy()
-
             if not target_df.empty:
-
                 agg = target_df.groupby('상대 덱').agg({
-                    '결과': 'count',
-                    'is_win': 'sum',
-                    'is_loss': 'sum',
-                    'is_1st': 'sum',
-                    'win_1st': 'sum',
-                    'is_2nd': 'sum',
-                    'win_2nd': 'sum',
-                    'has_arch': 'sum'
-                }).rename(columns={
-                    '결과': 'Total',
-                    'is_win': 'W',
-                    'is_loss': 'L'
-                })
-
+                    '결과': 'count', 'is_win': 'sum', 'is_loss': 'sum',
+                    'is_1st': 'sum', 'win_1st': 'sum', 'is_2nd': 'sum', 'win_2nd': 'sum', 'has_arch': 'sum'
+                }).rename(columns={'결과': 'Total', 'is_win': 'W', 'is_loss': 'L'})
+                
                 total_m = agg['Total'].sum()
-
                 agg['W%'] = agg['W'] / agg['Total'] * 100
                 agg['1st W%'] = agg['win_1st'] / agg['is_1st'] * 100
                 agg['2nd W%'] = agg['win_2nd'] / agg['is_2nd'] * 100
                 agg['Share'] = agg['Total'] / total_m * 100
                 agg['Plus Arch'] = agg['has_arch'] / agg['Total'] * 100
-
                 agg = agg.sort_values(by='Total', ascending=False)
 
-                headers = [
-                    'Matchup', 'Total', 'W', 'L',
-                    'W%', '1st W%', '2nd W%',
-                    'Share', 'Plus Arch'
-                ]
-
-                html = '<table class="styled-table"><tr>'
-                html += ''.join(f'<th>{h}</th>' for h in headers)
-                html += '</tr>'
-
-                # TOTAL ROW
-                t_w = agg['W'].sum()
-                t_l = agg['L'].sum()
-                t_1 = agg['is_1st'].sum()
-                t_1w = agg['win_1st'].sum()
-                t_2 = agg['is_2nd'].sum()
-                t_2w = agg['win_2nd'].sum()
-                t_a = agg['has_arch'].sum()
-
-                html += f'''
-                <tr style="background-color:#fff2cc; font-weight:bold;">
-                <td>Total</td>
-                <td>{total_m}</td>
-                <td class="win-val">{t_w}</td>
-                <td class="loss-val">{t_l}</td>
-                <td>{(t_w/total_m*100):.2f}%</td>
-                <td>{(t_1w/t_1*100 if t_1>0 else 0):.2f}%</td>
-                <td>{(t_2w/t_2*100 if t_2>0 else 0):.2f}%</td>
-                <td>100.00%</td>
-                <td>{(t_a/total_m*100):.2f}%</td>
-                </tr>
-                '''
-
+                headers = ['Matchup', 'Total', 'W', 'L', 'W%', '1st W%', '2nd W%', 'Share', 'Plus Arch']
+                html = '<table class="styled-table"><tr>' + ''.join(f'<th>{h}</th>' for h in headers) + '</tr>'
+                
+                # 합계 행
+                t_w, t_l, t_1, t_1w, t_2, t_2w, t_a = agg['W'].sum(), agg['L'].sum(), agg['is_1st'].sum(), agg['win_1st'].sum(), agg['is_2nd'].sum(), agg['win_2nd'].sum(), agg['has_arch'].sum()
+                html += f'<tr style="background-color:#fff2cc; font-weight:bold;"><td>Total</td><td>{total_m}</td><td class="win-val">{t_w}</td><td class="loss-val">{t_l}</td><td>{(t_w/total_m*100):.2f}%</td><td>{(t_1w/t_1*100 if t_1>0 else 0):.2f}%</td><td>{(t_2w/t_2*100 if t_2>0 else 0):.2f}%</td><td>100.00%</td><td>{(t_a/total_m*100):.2f}%</td></tr>'
+                
                 for deck, row in agg.iterrows():
-
-                    html += f'''
-                    <tr>
-                    <td>{deck}</td>
-                    <td>{int(row["Total"])}</td>
-                    <td class="win-val">{int(row["W"])}</td>
-                    <td class="loss-val">{int(row["L"])}</td>
-                    <td>{row["W%"]:.2f}%</td>
-                    <td>{row["1st W%"]:.2f}%</td>
-                    <td>{row["2nd W%"]:.2f}%</td>
-                    <td>{row["Share"]:.2f}%</td>
-                    <td>{row["Plus Arch"]:.2f}%</td>
-                    </tr>
-                    '''
-
+                    html += f'<tr><td>{deck}</td><td>{int(row["Total"])}</td><td class="win-val">{int(row["W"])}</td><td class="loss-val">{int(row["L"])}</td><td>{row["W%"]:.2f}%</td>'
+                    html += f'<td>{row["1st W%"]:.2f}%</td>' if pd.notnull(row["1st W%"]) else '<td>-</td>'
+                    html += f'<td>{row["2nd W%"]:.2f}%</td>' if pd.notnull(row["2nd W%"]) else '<td>-</td>'
+                    html += f'<td>{row["Share"]:.2f}%</td><td>{row["Plus Arch"]:.2f}%</td></tr>'
                 st.markdown(html + '</table>', unsafe_allow_html=True)
+            else: st.info(f"'{sel_my}' 덱의 매치업 데이터가 없습니다.")
+    else: st.info("데이터가 없습니다.")
 
-            else:
-                st.info(f"'{sel_my}' 덱의 매치업 데이터가 없습니다.")
-
-
-# --- PAGE: Graph ---
+# --- [PAGE: Graph] ---
 elif page == "🖼️ Graph":
-
     st.title("🖼️ Deck Distribution Graph")
-
     df_graph = load_records()
-
     if not df_graph.empty:
-
         calc_df = df_graph[df_graph['결과'].isin(['승', '패'])]
-
         if not calc_df.empty:
-
-            st.subheader("🃏 상대 덱 점유율 (Overall)")
-
             opp_counts = calc_df['상대 덱'].value_counts().reset_index()
             opp_counts.columns = ['Deck', 'Count']
-
-            fig = px.pie(
-                opp_counts,
-                values='Count',
-                names='Deck',
-                hole=0.4,
-                color_discrete_sequence=px.colors.qualitative.Pastel
-            )
-
-            fig.update_traces(textposition='inside', textinfo='percent+label')
-
+            fig = px.pie(opp_counts, values='Count', names='Deck', hole=0.4, title="상대 덱 점유율")
             st.plotly_chart(fig, use_container_width=True)
+        else: st.info("분석할 데이터가 부족합니다.")
 
-        else:
-            st.info("분석할 승/패 데이터가 부족합니다.")
-
-    else:
-        st.info("기록된 데이터가 없습니다.")
-
-
-# --- PAGE: Setting ---
+# --- [PAGE: Setting] ---
 else:
-
     st.title("⚙️ Setting (Auto-Save)")
-
-    st.info("각 항목을 한 줄에 하나씩 입력하세요. 수정 후 바깥을 클릭하면 자동 저장됩니다.")
-
+    st.info("수정 후 바깥을 클릭하면 자동 저장됩니다.")
     m = st.session_state.metadata
-
+    
     def update_meta():
-
         st.session_state.metadata = {
             "my_decks": [x.strip() for x in st.session_state.s_my.split("\n") if x.strip()],
             "opp_decks": [x.strip() for x in st.session_state.s_opp.split("\n") if x.strip()],
@@ -334,53 +195,12 @@ else:
             "archetypes": [x.strip() for x in st.session_state.s_arch.split("\n") if x.strip()],
             "target_cards": [x.strip() for x in st.session_state.s_card.split("\n") if x.strip()]
         }
-
         save_metadata(st.session_state.metadata)
 
     c1, c2 = st.columns(2)
-
-    with c1:
-        st.text_area(
-            "내 덱",
-            "\n".join(m["my_decks"]),
-            key="s_my",
-            on_change=update_meta,
-            height=150
-        )
-
-    with c2:
-        st.text_area(
-            "상대 덱",
-            "\n".join(m["opp_decks"]),
-            key="s_opp",
-            on_change=update_meta,
-            height=150
-        )
-
+    with c1: st.text_area("내 덱", "\n".join(m["my_decks"]), key="s_my", on_change=update_meta, height=150)
+    with c2: st.text_area("상대 덱", "\n".join(m["opp_decks"]), key="s_opp", on_change=update_meta, height=150)
     c3, c4 = st.columns(2)
-
-    with c3:
-        st.text_area(
-            "승패 요인",
-            "\n".join(m["win_loss_reasons"]),
-            key="s_reas",
-            on_change=update_meta,
-            height=150
-        )
-
-    with c4:
-        st.text_area(
-            "아키타입",
-            "\n".join(m["archetypes"]),
-            key="s_arch",
-            on_change=update_meta,
-            height=150
-        )
-
-    st.text_area(
-        "특정 카드",
-        "\n".join(m["target_cards"]),
-        key="s_card",
-        on_change=update_meta,
-        height=150
-    )
+    with c3: st.text_area("승패 요인", "\n".join(m["win_loss_reasons"]), key="s_reas", on_change=update_meta, height=150)
+    with c4: st.text_area("아키타입", "\n".join(m.get("archetypes", ["운영"])), key="s_arch", on_change=update_meta, height=150)
+    st.text_area("특정 카드", "\n".join(m["target_cards"]), key="s_card", on_change=update_meta, height=150)
