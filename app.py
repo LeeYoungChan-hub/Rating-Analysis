@@ -61,7 +61,7 @@ if 'df' not in st.session_state: st.session_state.df = load_records()
 # --- 5. 사이드바 메뉴 및 높이 조절 ---
 page = st.sidebar.radio("Menu", ["📊 Record", "📈 Analysis", "🖼️ Graph", "⚙️ Setting"])
 st.sidebar.markdown("---")
-table_height = st.sidebar.slider("표 높이 조절 (px)", 300, 1200, 700, 50)
+table_height = st.sidebar.slider("표 높이 조절 (px)", 300, 20000, 700, 50)
 
 # --- [PAGE: Record] ---
 if page == "📊 Record":
